@@ -1,0 +1,38 @@
+---
+title: Merkle Search Tree - When New Data Comes In
+---
+
+graph TD
+    subgraph "After Inserting ID: 149"
+
+
+    %% Nodes
+    Root("ROOT RANGE[0-1000]<br/>Hash: **CHANGED**"):::dirty
+    
+    L1("RANGE[0-500]<br/>Hash: **CHANGED**"):::dirty
+    R1("RANGE[501-1000]<br/>Hash: Unchanged"):::default
+
+    L2("RANGE[0-250]<br/>Hash: **CHANGED**"):::dirty
+    R2("RANGE[251-500]<br/>Hash: Unchanged"):::default
+
+    Leaf1("ID: 101<br/>Hash: 0xABC..."):::leaf
+    LeafNew("ID: 149<br/>Hash: 0xNEW..."):::newInserted
+    Leaf2("ID: 150<br/>Hash: 0xDEF..."):::leaf
+    Leaf3("ID: 300<br/>Hash: 0x789..."):::leaf
+    
+    %% Connections
+    Root --> L1
+    Root --> R1
+
+    L1 --> L2
+    L1 --> R2
+
+    %% The Insertion happened here
+    L2 --- Leaf1
+    L2 --- LeafNew
+    L2 --- Leaf2
+    
+    R2 --- Leaf3
+    
+    R1 -.-> R1_Child[...]:::default
+    end

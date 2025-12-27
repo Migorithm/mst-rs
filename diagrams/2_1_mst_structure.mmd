@@ -1,0 +1,19 @@
+---
+title: Merkle Search Tree
+---
+
+graph TD
+    Root("ROOT RANGE[0-1000]<br/>Hash: 0xFF99AA..."):::internal
+    Root --> L1("RANGE[0-500]<br/>Hash: 0xCC4455..."):::internal
+    Root --> R1("RANGE[501-1000]<br/>Hash: 0xDD7788..."):::internal
+
+    L1 --> L2("RANGE[0-250]<br/>Hash: 0xAA1122..."):::internal
+    L1 --> R2("RANGE[251-500]<br/>Hash: 0xBB3344..."):::internal
+
+    L2 --- Leaf1("ID: 101<br/>Hash: 0xABC123"):::leaf
+    L2 --- Leaf2("ID: 150<br/>Hash: 0xDEF456"):::leaf
+    R2 --- Leaf3("ID: 300<br/>Hash: 0x789GHI"):::leaf
+    
+    R1 -.-> R1_Child[...]:::internal
+
+    
