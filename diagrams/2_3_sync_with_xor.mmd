@@ -1,0 +1,20 @@
+graph TD
+    subgraph "Standard MST (Concatenation)"
+        direction TB
+        S_Old[Parent Hash]
+        S_Update[Update Child B]
+        S_Work[/" WORK: Must Fetch A, C, D... <br/>Recalculate: Hash(A+B'+C+D)"/]:::heavy
+        
+        S_Old --> S_Update
+        S_Update --> S_Work
+    end
+
+    subgraph "XOR MST Merkle-ized HashSet"
+        direction TB
+        X_Old[Parent Hash]
+        X_Update[Update Child B]
+        X_Work[/"WORK: No Fetching Siblings!<br/>Calc: OldParent + B + B'"/]:::fast
+        
+        X_Old --> X_Update
+        X_Update --> X_Work
+    end
