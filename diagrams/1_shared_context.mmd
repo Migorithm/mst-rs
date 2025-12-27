@@ -1,0 +1,26 @@
+graph LR
+    subgraph "Order Service Domain"
+        ODB[(Order DB)] -->|Raw Data| O_Mapper[Data Mapper]
+        noteO[/"Raw: {id:101, status:'FILLED', amt:99.00, curr:'USD'}"/]---ODB
+        O_Mapper -->|Normalize & Sort| O_Canon[Canonical Object]
+        noteOC[/"Canonical: {id:101, state:'DONE', val:'99.00USD'}"/]---O_Canon
+        O_Canon -->|SHA256| O_Hash(Hash: 0xABC123...)
+    end
+
+    subgraph "Billing Service Domain"
+        BDB[(Billing DB)] -->|Raw Data| B_Mapper[Data Mapper]
+        noteB[/"Raw: {ref_id:101, payment_status:'PAID', total:99, Currency:'usd'}"/]---BDB
+        B_Mapper -->|Normalize & Sort| B_Canon[Canonical Object]
+        noteBC[/"Canonical: {id:101, state:'DONE', val:'99.00USD'}"/]---B_Canon
+        B_Canon -->|SHA256| B_Hash(Hash: 0xABC123...)
+    end
+
+    subgraph "The Shared Contract"
+        O_Hash -.-> Match{Do Hashes Match?}
+        B_Hash -.-> Match
+        Match -- Yes --> SyncOK[Data is Synced]
+        Match -- No --> SyncFail[Drift Detected]
+    end
+
+
+    style SyncOK fill:#5c94a1,stroke:#00bce6
