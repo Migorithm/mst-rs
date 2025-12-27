@@ -40,3 +40,22 @@ Events miss things.
 - A "re-drive" script runs and updates the DB without emitting an event.
 
 MST looks at the actual database state, not the event stream. 
+
+
+## Expected Storage Cost
+To capture 1 billion records, it accounts for around 40GB - 50GB. 
+
+To build the MST, you don't store the full data payload in the tree. You only store the Coordinate (ID) and the Fingerprint (Hash).
+
+- ID (Key): 64-bit integer = 8 Bytes.
+- Hash (Value): SHA-256 = 256 bits = 32 Bytes.
+- Total per Record: 40 Bytes.
+
+This amounts to:
+```sh
+1_000_000_000 records x 40 bytes = 40_000_000_000 bytes 
+~= 37.25 GiB
+```
+
+But, real world overhead comes in: To organize them into B-Tree structure.
+- Internal Node Overhead: In a B-Tree, most nodes are Leaf Nodes. The "Parent" nodes usually add only ~1-2% extra volume.
