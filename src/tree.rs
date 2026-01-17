@@ -24,12 +24,32 @@ impl InternalNode {
     }
 
     fn add_leaf(&mut self, leaf: Leaf) {
-        let mut hasher = sha2::Sha256::new();
-        hasher.update(self.hash);
-        hasher.update(leaf.hash);
-        self.children.push(leaf);
-        self.children.sort();
-        self.hash = hasher.finalize().into();
+        let leaf_hash = leaf.hash;
+
+        match self.children.binary_search_by(|l| l.key.cmp(&leaf.key)) {
+            Ok(index) => {
+                let old_hash = self.children[index].hash;
+                // ! cancel out previous hash by XORing(because X ^ X = 0)
+                self.xor_hash(old_hash);
+
+                self.children[index] = leaf;
+                self.xor_hash(leaf_hash);
+            }
+            Err(index) => {
+                self.xor_hash(leaf_hash);
+                self.children.insert(index, leaf);
+            }
+        }
+
+        if let Some(last_leaf) = self.children.last() {
+            self.max_key = last_leaf.key.clone();
+        }
+    }
+
+    fn xor_hash(&mut self, leaf_hash: [u8; 32]) {
+        for i in 0..32 {
+            self.hash[i] ^= leaf_hash[i]
+        }
     }
 }
 
