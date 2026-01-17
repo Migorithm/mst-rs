@@ -68,7 +68,7 @@ impl Root {
             Ok(found) => todo!(),
             Err(not_found) => {
                 match (
-                    self.children.get(not_found.saturating_sub(1)),
+                    self.children.get(not_found.saturating_sub(1)), // ! is it okay to use sat sub?
                     self.children.get(not_found),
                 ) {
                     (None, None) => {
