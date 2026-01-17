@@ -110,3 +110,18 @@ impl Ord for Leaf {
         self.key.cmp(&other.key)
     }
 }
+
+#[cfg(test)]
+mod test {
+
+    use super::*;
+
+    #[test]
+    fn addleaf_sort_correctly() {}
+
+    #[test]
+    fn addleaf_on_same_leaf_correctly_modify_hash() {}
+
+    #[test]
+    fn addleaf_creates_deterministic_hash() {}
+}
