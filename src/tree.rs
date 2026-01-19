@@ -1,29 +1,27 @@
 use sha2::Digest;
 
-type MaxKey = String;
-
-struct Root {
+struct Root<K: Ord + Clone + Default> {
     hash: [u8; 32],
-    children: Vec<InternalNode>,
+    children: Vec<InternalNode<K>>,
     max_count: u64,
 }
 
-struct InternalNode {
+struct InternalNode<K: Ord + Clone + Default> {
     hash: [u8; 32],
-    children: Vec<Leaf>,
-    max_key: MaxKey,
+    children: Vec<Leaf<K>>,
+    max_key: K,
 }
 
-impl InternalNode {
+impl<K: Ord + Clone + Default> InternalNode<K> {
     fn new() -> Self {
         Self {
             hash: [0; 32],
             children: vec![],
-            max_key: "".to_string(),
+            max_key: K::default(),
         }
     }
 
-    fn add_leaf(&mut self, leaf: Leaf) {
+    fn add_leaf(&mut self, leaf: Leaf<K>) {
         let leaf_hash = leaf.hash;
 
         match self.children.binary_search_by(|l| l.key.cmp(&leaf.key)) {
@@ -57,7 +55,7 @@ impl InternalNode {
         if let Some(last) = self.children.last() {
             self.max_key = last.key.clone();
         } else {
-            self.max_key = "".to_string();
+            self.max_key = K::default();
         }
 
         for hash in self.children.iter().map(|l| l.hash).collect::<Vec<_>>() {
@@ -65,7 +63,7 @@ impl InternalNode {
         }
     }
 
-    fn split(&mut self) -> InternalNode {
+    fn split(&mut self) -> InternalNode<K> {
         let mid = self.children.len() / 2;
         let other_leaves = self.children.split_off(mid);
 
@@ -80,7 +78,7 @@ impl InternalNode {
     }
 }
 
-impl Root {
+impl<K: Ord + Clone + Default> Root<K> {
     pub fn new(max_count: u64) -> Self {
         Self {
             hash: [0; 32],
@@ -99,7 +97,7 @@ impl Root {
         }
     }
 
-    pub fn insert(&mut self, key: String, value: String) {
+    pub fn insert(&mut self, key: K, value: String) {
         // Create Leaf
         let mut hasher = sha2::Sha256::new();
         hasher.update(value.as_bytes());
@@ -127,7 +125,7 @@ impl Root {
             child_index - 1
         };
 
-        // Update child and handle splitting
+        // Cancel out previous hash
         let old_hash = self.children[target_index].hash;
         self.xor_hash(old_hash);
 
@@ -137,9 +135,7 @@ impl Root {
             // Node is over capacity, split it.
             let new_sibling = self.children[target_index].split();
 
-            // XOR in the hash of the modified original node.
             self.xor_hash(self.children[target_index].hash);
-            // XOR in the hash of the new sibling.
             self.xor_hash(new_sibling.hash);
 
             // Add the new sibling to the root's children.
@@ -151,25 +147,25 @@ impl Root {
     }
 }
 
-struct Leaf {
-    key: String,
+struct Leaf<K: Ord + Clone> {
+    key: K,
     hash: [u8; 32],
 }
 
-impl PartialEq for Leaf {
+impl<K: Ord + Clone> PartialEq for Leaf<K> {
     fn eq(&self, other: &Self) -> bool {
         self.key == other.key
     }
 }
 
-impl Eq for Leaf {}
+impl<K: Ord + Clone> Eq for Leaf<K> {}
 
-impl PartialOrd for Leaf {
+impl<K: Ord + Clone> PartialOrd for Leaf<K> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         self.key.partial_cmp(&other.key)
     }
 }
-impl Ord for Leaf {
+impl<K: Ord + Clone> Ord for Leaf<K> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.key.cmp(&other.key)
     }
