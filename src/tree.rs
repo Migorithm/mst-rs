@@ -8,6 +8,7 @@ pub struct Tree<K: Ord + Clone + Default> {
 }
 
 // The internal and leaf nodes of the tree
+
 enum Node<K: Ord + Clone + Default> {
     Internal {
         hash: [u8; 32],
@@ -20,14 +21,20 @@ enum Node<K: Ord + Clone + Default> {
     },
 }
 
+impl<K: Ord + Clone + Default> Default for Node<K> {
+    fn default() -> Self {
+        Node::Internal {
+            hash: [0; 32],
+            children: vec![],
+            max_key: K::default(),
+        }
+    }
+}
+
 impl<K: Ord + Clone + Default> Tree<K> {
     pub fn new(max_children: usize) -> Self {
         Tree {
-            root: Node::Internal {
-                hash: [0; 32],
-                children: vec![],
-                max_key: K::default(),
-            },
+            root: Node::default(),
             max_children,
         }
     }
@@ -41,14 +48,7 @@ impl<K: Ord + Clone + Default> Tree<K> {
 
         if let Some(new_sibling) = self.root.insert(leaf, self.max_children) {
             // The root split, so we need to create a new root.
-            let old_root = std::mem::replace(
-                &mut self.root,
-                Node::Internal {
-                    hash: [0; 32],
-                    children: vec![],
-                    max_key: K::default(),
-                },
-            );
+            let old_root = std::mem::replace(&mut self.root, Node::default());
 
             let mut new_root = Node::Internal {
                 hash: [0; 32],
@@ -64,8 +64,6 @@ impl<K: Ord + Clone + Default> Tree<K> {
         self.root.hash()
     }
 }
-
-// --- Implementation of Node ---
 
 impl<K: Ord + Clone + Default> Node<K> {
     fn key(&self) -> &K {
@@ -160,7 +158,6 @@ impl<K: Ord + Clone + Default> Node<K> {
     }
 }
 
-// --- Trait implementations for Node ---
 // These are needed for sorting and comparing
 impl<K: Ord + Clone + Default> PartialEq for Node<K> {
     fn eq(&self, other: &Self) -> bool {
