@@ -108,35 +108,47 @@ impl<K: Ord + Clone + Default> Node<K> {
     // Inserts a new node into the subtree.
     // Returns a new sibling if the current node splits.
     fn insert(&mut self, new_node: Node<K>, max_children: usize) -> Option<Node<K>> {
+        // This method is only callable on Node::Internal
         let children = match self {
             Node::Internal { children, .. } => children,
             Node::Leaf { .. } => panic!("Cannot insert into a leaf node."),
         };
 
-        let new_node_key = new_node.key();
+        // Decide whether to descend further or insert at this level.
+        // descend if our children are also Internal nodes.
+        // insert here if our children are Leaves (or if we have no children yet).
+        let are_children_leaves = children.is_empty() || !children[0].is_internal();
 
-        // Find which child to descend into.
-        let child_index: usize = children.partition_point(|child| child.key() < new_node_key);
-
-        // ! recursive case
-        // If there's a child at this position and it's an internal node, we must descend.
-        // Otherwise, we insert the new_node at this level.
-        let new_sibling_from_child = if children.get(child_index).map_or(false, |c| c.is_internal())
-        {
-            children[child_index].insert(new_node, max_children)
+        if are_children_leaves {
+            //  Base Case: children are leaves. Handle insert/upsert.
+            let new_node_key = new_node.key();
+            match children.binary_search_by_key(&new_node_key, |child| child.key()) {
+                Ok(index) => {
+                    // Key exists. Replace the old leaf.
+                    children[index] = new_node;
+                }
+                Err(index) => {
+                    // Key not found. Insert the new leaf.
+                    children.insert(index, new_node);
+                }
+            }
         } else {
-            // We are at the level right above the leaves. Insert the new_node here.
-            children.insert(child_index, new_node);
-            None
-        };
+            // ! Recursive case - children are Internal nodes
+            // Find which child to descend into.
+            let child_index = children.partition_point(|child| child.key() < new_node.key());
 
-        // If the child split, add its new sibling to children.
-        if let Some(sibling) = new_sibling_from_child {
-            let insert_pos = children.partition_point(|c| c.key() < sibling.key());
-            children.insert(insert_pos, sibling);
+            // Descend and get a potential new sibling from the child if it splits.
+            let new_sibling_from_child = children[child_index].insert(new_node, max_children);
+
+            // If the child split, add its new sibling to our children list.
+            if let Some(sibling) = new_sibling_from_child {
+                let sibling_key = sibling.key();
+                let insert_pos = children.partition_point(|c| c.key() < sibling_key);
+                children.insert(insert_pos, sibling);
+            }
         }
 
-        // Now, check if it has too many children and need to split.
+        // After insertion, check if it needs to split itself.
         let my_new_sibling = if children.len() > max_children {
             let mid = children.len() / 2;
             let sibling_children = children.split_off(mid);
@@ -151,7 +163,7 @@ impl<K: Ord + Clone + Default> Node<K> {
             None
         };
 
-        // Finally, recalculate our own hash and max_key before returning.
+        // Finally, always recalculate our own hash and max_key before returning.
         self.recalculate();
 
         my_new_sibling
@@ -337,5 +349,48 @@ mod test {
         tree.insert("key2".to_string(), "value2".to_string());
         let hash_after_2 = tree.hash().clone();
         assert_ne!(hash_after_1, hash_after_2);
+    }
+
+    #[test]
+    fn test_upsert_replaces_leaf() {
+        let mut tree = Tree::<String>::new(10);
+        tree.insert("key1".to_string(), "value1".to_string());
+
+        // Check initial state
+        let initial_hash = tree.hash().clone();
+        if let Node::Internal { children, .. } = &tree.root {
+            if let Node::Leaf { hash, .. } = &children[0] {
+                let mut hasher = sha2::Sha256::new();
+                hasher.update("value1".as_bytes());
+                let expected_hash: [u8; 32] = hasher.finalize().into();
+                assert_eq!(hash, &expected_hash);
+            } else {
+                panic!("Child should be a leaf");
+            }
+        } else {
+            panic!("Root should be internal");
+        }
+
+        // Now, insert the same key with a new value
+        tree.insert("key1".to_string(), "value1_modified".to_string());
+        let updated_hash = tree.hash().clone();
+        assert_ne!(initial_hash, updated_hash);
+
+        // Check the updated state
+        if let Node::Internal { children, .. } = &tree.root {
+            // Should still only have one child
+            assert_eq!(children.len(), 1);
+            // Check that the hash of the leaf has changed
+            if let Node::Leaf { hash, .. } = &children[0] {
+                let mut hasher = sha2::Sha256::new();
+                hasher.update("value1_modified".as_bytes());
+                let expected_hash: [u8; 32] = hasher.finalize().into();
+                assert_eq!(hash, &expected_hash);
+            } else {
+                panic!("Child should be a leaf");
+            }
+        } else {
+            panic!("Root should be internal");
+        }
     }
 }
