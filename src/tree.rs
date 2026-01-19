@@ -51,6 +51,33 @@ impl InternalNode {
             self.hash[i] ^= leaf_hash[i]
         }
     }
+
+    fn recalculate(&mut self) {
+        self.hash = [0; 32];
+        if let Some(last) = self.children.last() {
+            self.max_key = last.key.clone();
+        } else {
+            self.max_key = "".to_string();
+        }
+
+        for hash in self.children.iter().map(|l| l.hash).collect::<Vec<_>>() {
+            self.xor_hash(hash);
+        }
+    }
+
+    fn split(&mut self) -> InternalNode {
+        let mid = self.children.len() / 2;
+        let other_leaves = self.children.split_off(mid);
+
+        let mut new_node = InternalNode::new();
+        new_node.children = other_leaves;
+
+        // Recalculate hashes and max_keys for both nodes
+        self.recalculate();
+        new_node.recalculate();
+
+        new_node
+    }
 }
 
 impl Root {
@@ -79,7 +106,7 @@ impl Root {
         let hash: [u8; 32] = hasher.finalize().into();
         let leaf = Leaf { key, hash };
 
-        // In case of first insertion
+        // Handle Insertion and Edge Cases
         if self.children.is_empty() {
             // Case: Empty Tree
             let mut new_node = InternalNode::new();
@@ -95,24 +122,31 @@ impl Root {
             .partition_point(|node| &node.max_key < &leaf.key);
 
         let target_index = if child_index < self.children.len() {
-            // Case: Key fits in an existing range
             child_index
         } else {
-            // Case: Key is larger than all ranges, child_index is equal to lenth of vector in this case.
             child_index - 1
         };
 
-        // Cancel out old hash
-        self.xor_hash(self.children[target_index].hash);
+        // Update child and handle splitting
+        let old_hash = self.children[target_index].hash;
+        self.xor_hash(old_hash);
 
         self.children[target_index].add_leaf(leaf);
 
-        // Reapply hash of the children
-        self.xor_hash(self.children[target_index].hash);
-
-        // 5. Handle Node Splitting
         if self.children[target_index].children.len() as u64 > self.max_count {
-            // TODO: Split the node
+            // Node is over capacity, split it.
+            let new_sibling = self.children[target_index].split();
+
+            // XOR in the hash of the modified original node.
+            self.xor_hash(self.children[target_index].hash);
+            // XOR in the hash of the new sibling.
+            self.xor_hash(new_sibling.hash);
+
+            // Add the new sibling to the root's children.
+            self.children.insert(target_index + 1, new_sibling);
+        } else {
+            // No split, just XOR in the new hash.
+            self.xor_hash(self.children[target_index].hash);
         }
     }
 }
@@ -192,5 +226,37 @@ mod test {
         root.insert("key2".to_string(), "value2".to_string());
         let hash_after_2 = root.hash().clone();
         assert_ne!(hash_after_1, hash_after_2);
+    }
+
+    #[test]
+    fn insert_with_split() {
+        let mut root = Root::new(2); // max_count = 2
+
+        root.insert("key1".to_string(), "value1".to_string());
+        root.insert("key2".to_string(), "value2".to_string());
+
+        assert_eq!(root.children.len(), 1);
+        assert_eq!(root.children[0].children.len(), 2);
+
+        // This should trigger a split
+        root.insert("key3".to_string(), "value3".to_string());
+
+        assert_eq!(root.children.len(), 2); // Now we have two internal nodes
+
+        // The leaves before split are [key1, key2, key3]. mid = 3 / 2 = 1.
+        // Original node (at index 0) is left with 1 element.
+        assert_eq!(root.children[0].children.len(), 1);
+        assert_eq!(root.children[0].children[0].key, "key1");
+        assert_eq!(root.children[0].max_key, "key1");
+
+        // New node (at index 1) gets the other 2.
+        assert_eq!(root.children[1].children.len(), 2);
+        assert_eq!(root.children[1].children[0].key, "key2");
+        assert_eq!(root.children[1].children[1].key, "key3");
+        assert_eq!(root.children[1].max_key, "key3");
+
+        // Also check root hash is non-zero and has some value.
+        let zero_hash = [0; 32];
+        assert_ne!(root.hash(), &zero_hash);
     }
 }
