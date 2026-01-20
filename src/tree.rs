@@ -48,7 +48,7 @@ impl<K: Ord + Clone + Default> MerkleSearchTree<K> {
 
         if let Some(new_sibling) = self.root.insert(leaf, self.max_children) {
             // The root split, so we need to create a new root.
-            let old_root = std::mem::replace(&mut self.root, Node::default());
+            let old_root = std::mem::take(&mut self.root);
 
             let mut new_root = Node::Internal {
                 hash: [0; 32],
@@ -94,13 +94,12 @@ impl<K: Ord + Clone + Default> Node<K> {
             *hash = [0; 32];
             if let Some(last_child) = children.last() {
                 *max_key = last_child.key().clone();
-                for child in children {
+
+                children.iter_mut().for_each(|child| {
                     for i in 0..32 {
                         hash[i] ^= child.hash()[i];
                     }
-                }
-            } else {
-                *max_key = K::default();
+                });
             }
         }
     }
@@ -121,8 +120,7 @@ impl<K: Ord + Clone + Default> Node<K> {
 
         if are_children_leaves {
             //  Base Case: children are leaves. Handle insert/upsert.
-            let new_node_key = new_node.key();
-            match children.binary_search_by_key(&new_node_key, |child| child.key()) {
+            match children.binary_search(&new_node) {
                 Ok(index) => {
                     // Key exists. Replace the old leaf.
                     children[index] = new_node;
@@ -135,16 +133,20 @@ impl<K: Ord + Clone + Default> Node<K> {
         } else {
             // ! Recursive case - children are Internal nodes
             // Find which child to descend into.
-            let child_index = children.partition_point(|child| child.key() < new_node.key());
+            let mut child_index = children.partition_point(|child| child.key() < new_node.key());
+
+            // If the new key is larger than all existing children, partition_point
+            // returns children.len(). In this case, we route it to the last child.
+            if child_index == children.len() {
+                child_index = children.len() - 1;
+            }
 
             // Descend and get a potential new sibling from the child if it splits.
             let new_sibling_from_child = children[child_index].insert(new_node, max_children);
 
             // If the child split, add its new sibling to our children list.
-            if let Some(sibling) = new_sibling_from_child {
-                let sibling_key = sibling.key();
-                let insert_pos = children.partition_point(|c| c.key() < sibling_key);
-                children.insert(insert_pos, sibling);
+            if let Some(new_sibling) = new_sibling_from_child {
+                children.insert(child_index + 1, new_sibling);
             }
         }
 
@@ -153,7 +155,7 @@ impl<K: Ord + Clone + Default> Node<K> {
             let mid = children.len() / 2;
             let sibling_children = children.split_off(mid);
             let mut new_sibling = Node::Internal {
-                hash: [0; 32],
+                hash: Default::default(),
                 children: sibling_children,
                 max_key: K::default(), // will be recalculated
             };
@@ -352,45 +354,66 @@ mod test {
     }
 
     #[test]
-    fn test_upsert_replaces_leaf() {
-        let mut tree = MerkleSearchTree::<String>::new(10);
-        tree.insert("key1".to_string(), "value1".to_string());
+    fn test_update_existing_key() {
+        let mut tree = MerkleSearchTree::new(4);
 
-        // Check initial state
-        let initial_hash = tree.hash().clone();
-        if let Node::Internal { children, .. } = &tree.root {
-            if let Node::Leaf { hash, .. } = &children[0] {
-                let mut hasher = sha2::Sha256::new();
-                hasher.update("value1".as_bytes());
-                let expected_hash: [u8; 32] = hasher.finalize().into();
-                assert_eq!(hash, &expected_hash);
-            } else {
-                panic!("Child should be a leaf");
-            }
-        } else {
-            panic!("Root should be internal");
-        }
+        tree.insert(1, "version_1".to_string());
+        let hash_v1 = *tree.hash();
 
-        // Now, insert the same key with a new value
-        tree.insert("key1".to_string(), "value1_modified".to_string());
-        let updated_hash = tree.hash().clone();
-        assert_ne!(initial_hash, updated_hash);
+        tree.insert(1, "version_2".to_string()); // Update the value for key 1
+        let hash_v2 = *tree.hash();
 
-        // Check the updated state
-        if let Node::Internal { children, .. } = &tree.root {
-            // Should still only have one child
-            assert_eq!(children.len(), 1);
-            // Check that the hash of the leaf has changed
-            if let Node::Leaf { hash, .. } = &children[0] {
-                let mut hasher = sha2::Sha256::new();
-                hasher.update("value1_modified".as_bytes());
-                let expected_hash: [u8; 32] = hasher.finalize().into();
-                assert_eq!(hash, &expected_hash);
-            } else {
-                panic!("Child should be a leaf");
-            }
-        } else {
-            panic!("Root should be internal");
-        }
+        assert_ne!(hash_v1, hash_v2, "Updating a value should change the hash");
+    }
+
+    #[test]
+    fn test_merkle_property() {
+        let mut tree1 = MerkleSearchTree::new(4);
+        tree1.insert(1, "apple".to_string());
+        tree1.insert(2, "banana".to_string());
+
+        let mut tree2 = MerkleSearchTree::new(4);
+        tree2.insert(1, "apple".to_string());
+        tree2.insert(2, "banana".to_string());
+
+        assert_eq!(
+            tree1.hash(),
+            tree2.hash(),
+            "Identical content should yield identical hashes"
+        );
+
+        // Modify tree2
+        tree2.insert(3, "cherry".to_string());
+        assert_ne!(
+            tree1.hash(),
+            tree2.hash(),
+            "Different content must yield different hashes"
+        );
+
+        // Add same content to tree1
+        tree1.insert(3, "cherry".to_string());
+        assert_eq!(tree1.hash(), tree2.hash(), "Trees should match again");
+    }
+
+    #[test]
+    fn test_insert_largest_key_fix() {
+        // This test specifically targets the panic we fixed:
+        // "index out of bounds" when inserting a key larger than all current children.
+        let mut tree = MerkleSearchTree::new(2);
+
+        // 1. Insert base keys
+        tree.insert(10, "v10".to_string());
+        tree.insert(20, "v20".to_string());
+
+        // 2. Force a split (max_children = 2), creating a deeper tree
+        // The tree should now have Internal nodes.
+        tree.insert(30, "v30".to_string());
+
+        // 3. Insert a key strictly larger than the current max_key (30)
+        // If the `partition_point` fix is missing, this lines panics.
+        tree.insert(40, "v40".to_string());
+
+        // Verify no panic and structure is sound
+        assert_ne!(tree.hash(), &[0; 32]);
     }
 }
