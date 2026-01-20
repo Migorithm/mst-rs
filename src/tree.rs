@@ -2,14 +2,14 @@ use sha2::Digest;
 use std::cmp::Ordering;
 
 // The public interface to the tree
-pub struct Tree<K: Ord + Clone + Default> {
+pub struct MerkleSearchTree<K> {
     root: Node<K>,
     max_children: usize,
 }
 
 // The internal and leaf nodes of the tree
 
-enum Node<K: Ord + Clone + Default> {
+enum Node<K> {
     Internal {
         hash: [u8; 32],
         children: Vec<Node<K>>,
@@ -21,7 +21,7 @@ enum Node<K: Ord + Clone + Default> {
     },
 }
 
-impl<K: Ord + Clone + Default> Default for Node<K> {
+impl<K: Default> Default for Node<K> {
     fn default() -> Self {
         Node::Internal {
             hash: [0; 32],
@@ -31,9 +31,9 @@ impl<K: Ord + Clone + Default> Default for Node<K> {
     }
 }
 
-impl<K: Ord + Clone + Default> Tree<K> {
+impl<K: Ord + Clone + Default> MerkleSearchTree<K> {
     pub fn new(max_children: usize) -> Self {
-        Tree {
+        MerkleSearchTree {
             root: Node::default(),
             max_children,
         }
@@ -200,7 +200,7 @@ mod test {
         // 2. insert("key3"): The root has 2 children: [Leaf("key1"), Leaf("key3")]. This is less than 10, so no split.
         // 3. insert("key2"): The root has 3 children: [Leaf("key1"), Leaf("key2"), Leaf("key3")]. This is still less than 10, so no split.
 
-        let mut tree = Tree::<String>::new(10);
+        let mut tree = MerkleSearchTree::<String>::new(10);
         tree.insert("key1".to_string(), "value1".to_string());
         tree.insert("key3".to_string(), "value3".to_string());
         tree.insert("key2".to_string(), "value2".to_string());
@@ -217,7 +217,7 @@ mod test {
 
     #[test]
     fn test_cascading_split() {
-        let mut tree = Tree::<String>::new(2);
+        let mut tree = MerkleSearchTree::<String>::new(2);
         // These first three inserts will cause a root split (height: 2 -> 3)
         tree.insert("10".to_string(), "v1".to_string());
         tree.insert("20".to_string(), "v2".to_string());
@@ -297,7 +297,7 @@ mod test {
 
     #[test]
     fn test_root_split() {
-        let mut tree = Tree::new(2);
+        let mut tree = MerkleSearchTree::new(2);
         tree.insert("10".to_string(), "v1".to_string());
         tree.insert("20".to_string(), "v2".to_string());
         // The root's children list is now [ L("10"), L("20"), L("30") ].
@@ -339,7 +339,7 @@ mod test {
 
     #[test]
     fn test_hash_changes() {
-        let mut tree = Tree::<String>::new(10);
+        let mut tree = MerkleSearchTree::<String>::new(10);
         let initial_hash = tree.hash().clone();
 
         tree.insert("key1".to_string(), "value1".to_string());
@@ -353,7 +353,7 @@ mod test {
 
     #[test]
     fn test_upsert_replaces_leaf() {
-        let mut tree = Tree::<String>::new(10);
+        let mut tree = MerkleSearchTree::<String>::new(10);
         tree.insert("key1".to_string(), "value1".to_string());
 
         // Check initial state
