@@ -94,12 +94,9 @@ impl<K: Ord + Clone + Default> Node<K> {
             *hash = [0; 32];
             if let Some(last_child) = children.last() {
                 *max_key = last_child.key().clone();
-
-                children.iter_mut().for_each(|child| {
-                    for i in 0..32 {
-                        hash[i] ^= child.hash()[i];
-                    }
-                });
+                for child in children {
+                    xor_assign(hash, child.hash());
+                }
             }
         }
     }
@@ -108,9 +105,14 @@ impl<K: Ord + Clone + Default> Node<K> {
     // Returns a new sibling if the current node splits.
     fn insert(&mut self, new_node: Node<K>, max_children: usize) -> Option<Node<K>> {
         // This method is only callable on Node::Internal
-        let children = match self {
-            Node::Internal { children, .. } => children,
-            Node::Leaf { .. } => panic!("Cannot insert into a leaf node."),
+
+        let Node::Internal {
+            hash: self_hash,
+            children,
+            max_key,
+        } = self
+        else {
+            panic!("Cannot insert into a leaf node.")
         };
 
         // Decide whether to descend further or insert at this level.
@@ -122,12 +124,14 @@ impl<K: Ord + Clone + Default> Node<K> {
             //  Base Case: children are leaves. Handle insert/upsert.
             match children.binary_search(&new_node) {
                 Ok(index) => {
-                    // Key exists. Replace the old leaf.
+                    xor_assign(self_hash, children[index].hash());
                     children[index] = new_node;
+                    xor_assign(self_hash, children[index].hash());
                 }
                 Err(index) => {
                     // Key not found. Insert the new leaf.
                     children.insert(index, new_node);
+                    xor_assign(self_hash, children[index].hash());
                 }
             }
         } else {
@@ -141,17 +145,25 @@ impl<K: Ord + Clone + Default> Node<K> {
                 child_index = children.len() - 1;
             }
 
+            let old_child_hash = *children[child_index].hash();
+
             // Descend and get a potential new sibling from the child if it splits.
             let new_sibling_from_child = children[child_index].insert(new_node, max_children);
 
+            let new_child_hash = *children[child_index].hash();
+            xor_assign(self_hash, &old_child_hash);
+            xor_assign(self_hash, &new_child_hash);
+
             // If the child split, add its new sibling to our children list.
             if let Some(new_sibling) = new_sibling_from_child {
-                children.insert(child_index + 1, new_sibling);
+                let insert_at = child_index + 1;
+                children.insert(insert_at, new_sibling);
+                xor_assign(self_hash, children[insert_at].hash());
             }
         }
 
         // After insertion, check if it needs to split itself.
-        let my_new_sibling = if children.len() > max_children {
+        if children.len() > max_children {
             let mid = children.len() / 2;
             let sibling_children = children.split_off(mid);
             let mut new_sibling = Node::Internal {
@@ -160,15 +172,25 @@ impl<K: Ord + Clone + Default> Node<K> {
                 max_key: K::default(), // will be recalculated
             };
             new_sibling.recalculate();
+            xor_assign(self_hash, new_sibling.hash());
+            if let Some(last) = children.last() {
+                *max_key = last.key().clone();
+            }
+
             Some(new_sibling)
         } else {
+            if let Some(last) = children.last() {
+                *max_key = last.key().clone();
+            }
             None
-        };
+        }
+    }
+}
 
-        // Finally, always recalculate our own hash and max_key before returning.
-        self.recalculate();
-
-        my_new_sibling
+#[inline]
+fn xor_assign(target: &mut [u8; 32], source: &[u8; 32]) {
+    for (t, s) in target.iter_mut().zip(source.iter()) {
+        *t ^= s;
     }
 }
 
