@@ -1,3 +1,4 @@
+mod hash;
 mod tree;
 
 fn main() {

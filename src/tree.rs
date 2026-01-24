@@ -1,8 +1,7 @@
 use sha2::Digest;
-use std::{
-    cmp::Ordering,
-    ops::{Deref, DerefMut},
-};
+use std::cmp::Ordering;
+
+use crate::hash::NodeHash;
 
 // The public interface to the tree
 pub struct MerkleSearchTree<K> {
@@ -22,27 +21,6 @@ enum Node<K> {
         key: K,
         hash: NodeHash,
     },
-}
-
-#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
-pub struct NodeHash([u8; 32]);
-impl From<[u8; 32]> for NodeHash {
-    fn from(value: [u8; 32]) -> Self {
-        NodeHash(value)
-    }
-}
-impl Deref for NodeHash {
-    type Target = [u8; 32];
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for NodeHash {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
 }
 
 impl<K: Default> Default for Node<K> {
@@ -120,7 +98,7 @@ impl<K: Ord + Clone + Default> Node<K> {
             if let Some(last_child) = children.last() {
                 *max_key = last_child.key().clone();
                 for child in children {
-                    xor_assign(hash, child.hash());
+                    hash.xor(child.hash());
                 }
             }
         }
@@ -132,7 +110,7 @@ impl<K: Ord + Clone + Default> Node<K> {
         // This method is only callable on Node::Internal
 
         let Node::Internal {
-            hash: self_hash,
+            hash,
             children,
             max_key,
         } = self
@@ -149,14 +127,14 @@ impl<K: Ord + Clone + Default> Node<K> {
             //  Base Case: children are leaves. Handle insert/upsert.
             match children.binary_search(&new_node) {
                 Ok(index) => {
-                    xor_assign(self_hash, children[index].hash());
+                    hash.xor(children[index].hash());
                     children[index] = new_node;
-                    xor_assign(self_hash, children[index].hash());
+                    hash.xor(children[index].hash());
                 }
                 Err(index) => {
                     // Key not found. Insert the new leaf.
                     children.insert(index, new_node);
-                    xor_assign(self_hash, children[index].hash());
+                    hash.xor(children[index].hash());
                 }
             }
         } else {
@@ -171,19 +149,19 @@ impl<K: Ord + Clone + Default> Node<K> {
             }
 
             let old_child_hash = *children[child_index].hash();
+            hash.xor(&old_child_hash);
 
             // Descend and get a potential new sibling from the child if it splits.
             let new_sibling_from_child = children[child_index].insert(new_node, max_children);
 
-            let new_child_hash = *children[child_index].hash();
-            xor_assign(self_hash, &old_child_hash);
-            xor_assign(self_hash, &new_child_hash);
+            hash.xor(children[child_index].hash());
 
             // If the child split, add its new sibling to our children list.
             if let Some(new_sibling) = new_sibling_from_child {
                 let insert_at = child_index + 1;
                 children.insert(insert_at, new_sibling);
-                xor_assign(self_hash, children[insert_at].hash());
+
+                hash.xor(children[insert_at].hash());
             }
         }
 
@@ -197,7 +175,8 @@ impl<K: Ord + Clone + Default> Node<K> {
                 max_key: K::default(), // will be recalculated
             };
             new_sibling.recalculate();
-            xor_assign(self_hash, new_sibling.hash());
+
+            hash.xor(&new_sibling.hash());
             if let Some(last) = children.last() {
                 *max_key = last.key().clone();
             }
@@ -209,13 +188,6 @@ impl<K: Ord + Clone + Default> Node<K> {
             }
             None
         }
-    }
-}
-
-#[inline]
-fn xor_assign(target: &mut NodeHash, source: &NodeHash) {
-    for (t, s) in target.iter_mut().zip(source.iter()) {
-        *t ^= s;
     }
 }
 
