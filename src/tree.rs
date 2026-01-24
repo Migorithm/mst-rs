@@ -1,5 +1,8 @@
 use sha2::Digest;
-use std::cmp::Ordering;
+use std::{
+    cmp::Ordering,
+    ops::{Deref, DerefMut},
+};
 
 // The public interface to the tree
 pub struct MerkleSearchTree<K> {
@@ -11,20 +14,41 @@ pub struct MerkleSearchTree<K> {
 
 enum Node<K> {
     Internal {
-        hash: [u8; 32],
+        hash: NodeHash,
         children: Vec<Node<K>>,
         max_key: K,
     },
     Leaf {
         key: K,
-        hash: [u8; 32],
+        hash: NodeHash,
     },
+}
+
+#[derive(Clone, Copy, Default, PartialEq, Eq, Debug)]
+pub struct NodeHash([u8; 32]);
+impl From<[u8; 32]> for NodeHash {
+    fn from(value: [u8; 32]) -> Self {
+        NodeHash(value)
+    }
+}
+impl Deref for NodeHash {
+    type Target = [u8; 32];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for NodeHash {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
 }
 
 impl<K: Default> Default for Node<K> {
     fn default() -> Self {
         Node::Internal {
-            hash: [0; 32],
+            hash: NodeHash([0; 32]),
             children: vec![],
             max_key: K::default(),
         }
@@ -42,7 +66,8 @@ impl<K: Ord + Clone + Default> MerkleSearchTree<K> {
     pub fn insert(&mut self, key: K, value: String) {
         let mut hasher = sha2::Sha256::new();
         hasher.update(value.as_bytes());
-        let hash = hasher.finalize().into();
+        let hashed: [u8; 32] = hasher.finalize().into();
+        let hash = hashed.into();
 
         let leaf = Node::Leaf { key, hash };
 
@@ -51,7 +76,7 @@ impl<K: Ord + Clone + Default> MerkleSearchTree<K> {
             let old_root = std::mem::take(&mut self.root);
 
             let mut new_root = Node::Internal {
-                hash: [0; 32],
+                hash,
                 children: vec![old_root, new_sibling],
                 max_key: K::default(), // Will be set by recalculate
             };
@@ -60,7 +85,7 @@ impl<K: Ord + Clone + Default> MerkleSearchTree<K> {
         }
     }
 
-    pub fn hash(&self) -> &[u8; 32] {
+    pub fn hash(&self) -> &NodeHash {
         self.root.hash()
     }
 }
@@ -73,7 +98,7 @@ impl<K: Ord + Clone + Default> Node<K> {
         }
     }
 
-    fn hash(&self) -> &[u8; 32] {
+    fn hash(&self) -> &NodeHash {
         match self {
             Node::Internal { hash, .. } => hash,
             Node::Leaf { hash, .. } => hash,
@@ -91,7 +116,7 @@ impl<K: Ord + Clone + Default> Node<K> {
             max_key,
         } = self
         {
-            *hash = [0; 32];
+            *hash = Default::default();
             if let Some(last_child) = children.last() {
                 *max_key = last_child.key().clone();
                 for child in children {
@@ -188,7 +213,7 @@ impl<K: Ord + Clone + Default> Node<K> {
 }
 
 #[inline]
-fn xor_assign(target: &mut [u8; 32], source: &[u8; 32]) {
+fn xor_assign(target: &mut NodeHash, source: &NodeHash) {
     for (t, s) in target.iter_mut().zip(source.iter()) {
         *t ^= s;
     }
@@ -436,6 +461,6 @@ mod test {
         tree.insert(40, "v40".to_string());
 
         // Verify no panic and structure is sound
-        assert_ne!(tree.hash(), &[0; 32]);
+        assert_ne!(tree.hash(), &Default::default());
     }
 }
